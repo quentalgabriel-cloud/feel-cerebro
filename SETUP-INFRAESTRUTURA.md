@@ -41,6 +41,46 @@ pessoal já está conectada a esta sessão. A partir do passo 4, eu assumo.
 4. Me avise o nome da org e a URL do repo — é o que eu preciso pra ligar o
    Vercel a ele e fazer o primeiro push (seção 4 abaixo).
 
+### Estado em 2026-09-02 — repositório local pronto, push bloqueado
+
+O repositório local está **completo e commitado**, na branch `main`, árvore
+limpa, seis commits organizados por camada (scaffold · docs · banco · app ·
+código parado da Fase 03 · READMEs). Verificado antes de commitar:
+`tsc --noEmit`, `eslint` e `next build` limpos, e `supabase/tests/verify.sh`
+com `RLS TEST: PASS` num Postgres descartável. Varredura de segredo nos 81
+arquivos: nada — o único match era hash `sha512` de integridade no
+`package-lock.json`.
+
+**O que impede o push, exatamente:** o acesso ao GitHub desta sessão é
+limitado a um conjunto de repositórios autorizados, e `feel-cerebro` não
+está nele. Toda chamada de API fora desse conjunto responde 403 antes de
+checar se o repositório existe — então eu **não consigo nem distinguir se
+ele já existe ou não**. O push falha com a mensagem do proxy:
+
+> *"access denied by the git proxy: quentalgabriel-cloud/feel-cerebro is not
+> in this session's authorized repository set, so the proxy will not inject
+> a credential for it. To fix, add the repository to the session's sources."*
+
+Não é permissão do seu token nem coisa que eu contorne com `curl`: criar
+repositório (`POST /user/repos`) e listar orgs também estão bloqueados por
+serem paths fora do escopo de repositório. Também não existe conector de
+GitHub no registro de conectores — procurei.
+
+**Destravar tem dois passos, os dois seus:**
+
+1. **Se o repositório ainda não existe** — crie no GitHub um repositório
+   **privado** chamado `feel-cerebro` (na org nova, ou na sua conta
+   `quentalgabriel-cloud` se preferir decidir a org depois; mover repo
+   entre owners depois é trivial e não perde histórico). Não inicialize com
+   README, `.gitignore` nem licença — o repositório local já tem tudo, e um
+   commit inicial do lado do GitHub só cria conflito de histórico.
+2. **Autorize o repositório para a sessão** — adicione `feel-cerebro` às
+   fontes/repositórios desta conversa no app do Claude. Sem isso o proxy
+   continua recusando, mesmo com o repositório existindo e você sendo dono.
+
+Feito isso, o push é um comando só — o prompt pronto está em
+[`PROMPT-GITHUB.md`](PROMPT-GITHUB.md).
+
 ## 2. Vercel — conta pessoal (feito, em 2026-08-28)
 
 **Executado.** O app já está no ar, em deploy de produção, direto na sua
