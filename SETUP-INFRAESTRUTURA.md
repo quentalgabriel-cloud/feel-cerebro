@@ -59,8 +59,33 @@ o `Initial commit` do Gabriel com um README de 14 bytes. Trocar para privado
 ficou público por algum tempo, sujeito a fork e indexação, e não há como
 desfazer isso retroativamente.
 
-Trocar é em Settings → General → Danger Zone → *Change repository
+Trocar seria em Settings → General → Danger Zone → *Change repository
 visibility* → Private.
+
+> **DECISÃO (2026-09-02, Gabriel): fica público.** Levantei o risco com o
+> detalhe acima e ele autorizou explicitamente seguir assim — *"Autorizo e
+> quero seguir assim público mesmo"*. Decisão dele, registrada aqui porque
+> muda uma premissa que valia desde 2026-08-27 (`MODELO-DE-DADOS.md` §5.1 e
+> o passo 1 deste documento pediam repositório **privado**).
+>
+> **O que isso passa a implicar, daqui pra frente:**
+>
+> - Todo commit é público no instante do push. Não existe "corrigir depois":
+>   conteúdo em repositório público pode ter sido clonado, forkado ou
+>   indexado antes de qualquer remoção, e reescrever história não apaga o
+>   que já foi copiado.
+> - **Segredo que vazar está vazado.** Chave do Supabase, `CRON_SECRET`,
+>   token do GitHub — se algum entrar num commit, a resposta certa é
+>   *rotacionar a credencial*, não apagar o commit. O `.gitignore` cobre
+>   `.env.local`, e a varredura de segredo antes de cada push deixa de ser
+>   zelo e passa a ser obrigatória.
+> - A Fase 03 promove conhecimento canônico pra Markdown versionado **neste
+>   repositório**. Enquanto ele for público, tudo que for promovido é
+>   público — incluindo decisões e contexto interno dos três sócios. Isso
+>   precisa ser reavaliado antes da Fase 03 ir ao ar, ou a promoção precisa
+>   apontar pra outro repositório.
+> - Gatilho pra revisitar: o mesmo do Vercel — quando isso deixar de ser
+>   protótipo interno (`CEREBRO-DA-FEEL.md` §3).
 
 **2. O remoto não estava vazio.** O `Initial commit` criou um `README.md` que
 colidia com o nosso. Já resolvido localmente: os 7 commits foram rebaseados
