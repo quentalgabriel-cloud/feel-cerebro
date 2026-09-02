@@ -1,68 +1,65 @@
-# Cérebro da Feel — app (Fase 1)
+# Cérebro da Feel — app (Fase 01)
 
-Next.js 16 + TypeScript + Tailwind v4 + Supabase (`@supabase/ssr`) +
-Octokit. Implementa só a **Fase 1** de `../CEREBRO-DA-FEEL.md` §7 —
-captura e memória. A tela de mapa/grafo é Fase 2, deliberadamente não
-começada: depende da sessão de convergência dos três fundadores definindo
-os eixos reais da Feel (ver `../MODELO-DE-DADOS.md` §5, pergunta 6, e
-`eixos` como tabela vazia por design).
+Next.js 16 (App Router + Turbopack) + TypeScript + Tailwind v4 + Supabase
+(`@supabase/ssr`). Implementa a **Fase 01 — Live Foundation** do
+`../MASTER-IMPLEMENTATION-PLAN.md`: a camada de orientação, multi-tenant,
+com autorização no banco.
+
+No ar em https://feel-cerebro.vercel.app.
 
 ## O que existe
 
-- **`/login`** — magic link via Supabase Auth. Sem senha no sistema.
-- **`/inbox`** — lista compartilhada de tudo que os três capturaram, com
-  status (`novo` → `em_extracao` → `pronto_para_revisao` → `promovido` /
-  `descartado`).
-- **`/inbox/novo`** — captura: colar texto (grava direto) ou enviar
-  arquivo (PDF/DOCX/Markdown/TXT — sobe direto pro Supabase Storage via
-  signed URL, sem passar pela function).
-- **`/inbox/[id]`** — abre um item, mostra o texto (quando existe) e o
-  formulário de promoção (tipo, título, escopo, eixo opcional,
-  epistêmico/confiança opcionais).
-- **`/api/promote`** — gera o id humano-legível (`DEC-001`, `INS-001`...),
-  monta o Markdown com frontmatter, commita no GitHub via Octokit, grava
-  `notas_promovidas`, atualiza `itens_inbox`.
-- **`/api/cron/keepalive`** — chamado semanalmente pelo Vercel Cron
-  (`vercel.json`), autenticado por `CRON_SECRET`. Só toca o banco pra
-  evitar a pausa por inatividade do plano free do Supabase
-  (`MODELO-DE-DADOS.md` §3.6) — não faz nada além disso ainda.
+- **`/login`** — magic link via Supabase Auth. Não há senha no sistema.
+- **`/projects`** — lista os projetos de que você é membro e cria projeto
+  novo. O primeiro login cria seu perfil e sua organização pessoal
+  sozinho, sob RLS, sem service role.
+- **`/p/[slug]/now`** — a tela que justifica o sistema: **um** NOW, no
+  máximo **três** NEXT, o resto em NOT NOW, mais "o que mudou" lido de
+  `events`. Os limites são impostos pelo banco (índice único parcial e
+  check constraint), não pela aplicação — a aplicação só valida antes pra
+  dar mensagem decente.
+- **Quick Capture (⌘K)** — de qualquer tela, grava um `candidate`.
+  Captura é automática e barata de propósito.
+- **`/p/[slug]/work` · `/memory` · `/explore` · `/settings`** — empty
+  states honestos, sem mock. MEMORY avisa na tela que o que está ali é
+  captura, **não** conhecimento canônico.
+- **`/auth/callback`** — retorno do magic link, troca o code por sessão.
+- **`/api/cron/keepalive`** — cron semanal da Vercel (`vercel.json`),
+  autenticado por `CRON_SECRET`. Só toca o banco pra evitar a pausa por
+  inatividade do plano free do Supabase.
 
-## O que está deliberadamente incompleto (não é bug, é escopo)
+## O que está deliberadamente incompleto (é escopo, não bug)
 
-- **Extração de texto de arquivos não está implementada**
-  (`src/app/api/extrair/route.ts` é um stub honesto). MarkItDown foi a
-  ferramenta adotada (ver `PROMPT-BUSCA-OSS`/`CEREBRO-DA-FEEL.md` §6), mas
-  é Python — integrá-la a uma Function Node é uma decisão de
-  infraestrutura ainda não tomada (runtime Python separado, ou serviço
-  HTTP próprio). Até lá, upload funciona (arquivo fica seguro no Storage,
-  nunca descartado — princípio 5), mas o texto precisa ser colado
-  manualmente na revisão.
-- **RLS granular por `escopo: cliente:<nome>`** não existe — a migration
-  (`../supabase/migrations/0001_init.sql`) só cobre `feel` e `pessoal`,
-  porque não há hoje nenhum registro de escopo cliente.
-- **Curador (relações propostas por similaridade)** não existe — o cron
-  semanal (`/api/cron/keepalive`) hoje só faz o keepalive, a metade do
-  curador é Fase posterior, sem volume que justifique ainda.
+- **Promoção para conhecimento canônico** (candidate → Markdown versionado
+  no GitHub) é a **Fase 03**. O código que fazia isso no modelo
+  single-tenant está parado em `src/_fase03/`, fora do App Router e fora do
+  `tsconfig.json` — volta adaptado ao schema novo quando o repositório
+  existir.
+- **Extração de texto de arquivos** não está implementada. Upload guarda o
+  arquivo no Storage (nada é descartado), mas o texto precisa ser colado.
+- **`axes` é tabela vazia por design** — os eixos reais da Feel dependem da
+  sessão de convergência dos três sócios, não de código.
 
 ## Rodar localmente
 
-Nenhum recurso real (Supabase, GitHub) existe ainda — ver
-`../SETUP-INFRAESTRUTURA.md` para o runbook de criação da infra dedicada.
-Depois que existir:
-
 ```bash
-cp .env.local.example .env.local   # preencher as variáveis
+cp .env.local.example .env.local   # preencher com os valores do projeto Supabase
 npm install
 npm run dev                        # http://localhost:3000
 ```
 
-Sem as env vars preenchidas, a home redireciona para `/login`, mas as
-chamadas ao Supabase falham — comportamento esperado até a infra existir.
+Para o magic link funcionar em `localhost`, `http://localhost:3000/auth/callback`
+precisa estar na allow-list de **Redirect URLs** do Supabase Auth — ver
+`../SETUP-INFRAESTRUTURA.md` §3.
 
 ## Verificação
 
 ```bash
 npx tsc --noEmit
-npx eslint .
-npx next build
+npm run lint
+npm run build
 ```
+
+A verificação do banco é separada e mais importante — `../supabase/tests/verify.sh`
+sobe um Postgres descartável, aplica todas as migrations e roda a suíte de
+RLS. Nenhuma migration deve tocar o banco real antes de passar ali.
