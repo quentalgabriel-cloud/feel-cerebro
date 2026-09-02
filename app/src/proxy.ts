@@ -3,7 +3,8 @@ import { NextResponse, type NextRequest } from "next/server";
 
 // Refresca a sessão do Supabase Auth em toda requisição e redireciona para
 // /login quem não está autenticado — não há rota pública além de /login e
-// /auth/callback (o magic link volta por aqui).
+// /auth/callback (mantida para um futuro fluxo de recuperação de senha;
+// login em si é email+senha desde 2026-09-02 e não passa mais por aqui).
 //
 // Next.js 16 renomeou este arquivo de middleware.ts para proxy.ts (mesma
 // função, nome de export diferente) — ver
