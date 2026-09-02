@@ -29,7 +29,12 @@ export async function createProject(formData: FormData) {
     .limit(1)
     .maybeSingle();
 
-  if (!membership) return;
+  if (!membership) {
+    // Não devia acontecer mais — `ensureProfile()` já garante organização.
+    // Se aparecer nos logs, o bug voltou (ver histórico em lib/profile.ts).
+    console.error("createProject: profile sem organization_members", profile.id);
+    return;
+  }
 
   const slug = `${slugify(name)}-${Math.random().toString(36).slice(2, 6)}`;
 
@@ -46,7 +51,10 @@ export async function createProject(formData: FormData) {
     .select()
     .single();
 
-  if (error || !project) return;
+  if (error || !project) {
+    console.error("createProject: falha ao inserir project", error);
+    return;
+  }
 
   // Projeto e estado inicial nascem juntos: um projeto sem `project_state` é
   // um estado que a UI teria que tratar como exceção para sempre.

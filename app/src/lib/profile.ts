@@ -21,6 +21,17 @@ export function slugify(text: string): string {
 // autenticada cria organização, e entra como primeiro membro de uma que ainda
 // não tem ninguém. Nenhuma credencial de service role no caminho do primeiro
 // acesso.
+//
+// Bug corrigido em 2026-09-03: a checagem de organização só rodava no MESMO
+// request em que o profile era criado. A conta de teste do Gabriel tinha
+// `profiles` de antes da 0005 existir — a organização nunca chegou a ser
+// criada naquele login, e todo login seguinte batia em `if (existing) return`
+// e nunca mais tentava de novo. Resultado visível: `/projects` carregava,
+// mas criar projeto falhava em silêncio (`createProject` não achava
+// `organization_members` e só dava `return`) — sem erro, sem projeto, sem
+// como abrir. Agora a checagem de organização roda sempre, tenha o profile
+// acabado de nascer ou não, e os dois inserts logam se falharem em vez de
+// desaparecer.
 export async function ensureProfile(): Promise<Profile | null> {
   const supabase = await createClient();
   const {
@@ -34,38 +45,71 @@ export async function ensureProfile(): Promise<Profile | null> {
     .eq("auth_user_id", user.id)
     .maybeSingle();
 
-  if (existing) return existing as Profile;
+  let profile = existing as Profile | null;
 
-  const email = user.email ?? "";
-  const name =
-    (user.user_metadata?.name as string) || email.split("@")[0] || "Sem nome";
+  if (!profile) {
+    const email = user.email ?? "";
+    const name =
+      (user.user_metadata?.name as string) || email.split("@")[0] || "Sem nome";
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .insert({ auth_user_id: user.id, name, email })
-    .select()
-    .single();
+    const { data: inserted, error } = await supabase
+      .from("profiles")
+      .insert({ auth_user_id: user.id, name, email })
+      .select()
+      .single();
 
-  if (!profile) return null;
+    if (error || !inserted) {
+      console.error("ensureProfile: falha ao criar profile", error);
+      return null;
+    }
+    profile = inserted as Profile;
+  }
 
-  const { data: org } = await supabase
+  await ensureOrganization(supabase, profile);
+
+  return profile;
+}
+
+// Garante que o profile tem pelo menos uma organização — rodando em TODO
+// login, não só no primeiro. Idempotente: se já existe membership (mesmo
+// que a RLS só deixe ver a própria), não faz nada.
+async function ensureOrganization(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  profile: Profile,
+): Promise<void> {
+  const { data: membership } = await supabase
+    .from("organization_members")
+    .select("organization_id")
+    .limit(1)
+    .maybeSingle();
+
+  if (membership) return;
+
+  const { data: org, error: orgError } = await supabase
     .from("organizations")
     .insert({
-      name: `Espaço de ${name}`,
-      slug: `${slugify(name)}-${Math.random().toString(36).slice(2, 7)}`,
+      name: `Espaço de ${profile.name}`,
+      slug: `${slugify(profile.name)}-${Math.random().toString(36).slice(2, 7)}`,
     })
     .select()
     .single();
 
-  if (org) {
-    await supabase.from("organization_members").insert({
+  if (orgError || !org) {
+    console.error("ensureOrganization: falha ao criar organização", orgError);
+    return;
+  }
+
+  const { error: memberError } = await supabase
+    .from("organization_members")
+    .insert({
       organization_id: org.id,
       profile_id: profile.id,
       role: "owner",
     });
-  }
 
-  return profile as Profile;
+  if (memberError) {
+    console.error("ensureOrganization: falha ao entrar na organização", memberError);
+  }
 }
 
 // Projeto pelo slug, já filtrado por RLS: se a pessoa não for membro, o banco
