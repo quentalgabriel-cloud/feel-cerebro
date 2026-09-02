@@ -41,6 +41,36 @@ pessoal já está conectada a esta sessão. A partir do passo 4, eu assumo.
 4. Me avise o nome da org e a URL do repo — é o que eu preciso pra ligar o
    Vercel a ele e fazer o primeiro push (seção 4 abaixo).
 
+### Estado em 2026-09-02 (tarde) — repositório criado, mas PÚBLICO
+
+Gabriel criou https://github.com/quentalgabriel-cloud/feel-cerebro. Duas
+coisas apareceram na verificação:
+
+**1. O repositório está PÚBLICO — e o plano pedia privado.** Confirmado por
+dois caminhos independentes: `git clone` anônimo funcionou (o proxy avisa
+explicitamente que *não* injeta credencial para este repositório, e mesmo
+assim o clone passou), e a página do repositório mostra o selo `Public`.
+
+Isso importa porque o que está pra subir não é código genérico: é o porquê
+estratégico da Feel, as decisões dos três sócios, o plano de fases inteiro e
+o registro de risco. **Nada disso vazou ainda** — o único commit no remoto é
+o `Initial commit` do Gabriel com um README de 14 bytes. Trocar para privado
+*antes* do push evita o problema; trocar depois significa que o conteúdo
+ficou público por algum tempo, sujeito a fork e indexação, e não há como
+desfazer isso retroativamente.
+
+Trocar é em Settings → General → Danger Zone → *Change repository
+visibility* → Private.
+
+**2. O remoto não estava vazio.** O `Initial commit` criou um `README.md` que
+colidia com o nosso. Já resolvido localmente: os 7 commits foram rebaseados
+em cima do commit do Gabriel, o conflito do README foi resolvido em favor do
+nosso (que é o completo), e a árvore final ficou **idêntica** à de antes do
+rebase (conferido com `git diff --stat`). O push agora é *fast-forward* puro
+— `git rev-list --left-right --count` dá `0 7`. **Não vai precisar de
+`--force`**, e se alguém precisar de force em algum momento, é sinal de que
+algo mudou no remoto e a resposta certa é parar e olhar, não forçar.
+
 ### Estado em 2026-09-02 — repositório local pronto, push bloqueado
 
 O repositório local está **completo e commitado**, na branch `main`, árvore
