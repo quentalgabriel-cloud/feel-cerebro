@@ -9,12 +9,33 @@ dito.
 | Peça | Estado | Identificadores |
 |---|---|---|
 | **Supabase** | ✅ ativo | Projeto `feel-cerebro` (`rvctaywzzipimrpjfkqi`), org `massa-hub`, região `sa-east-1`, Postgres 17.6, `https://rvctaywzzipimrpjfkqi.supabase.co` |
-| **Vercel** | ✅ em produção | Projeto `feel-cerebro` (`prj_hGJNBOrBMLIABHAbi0uo1CA1Gstx`), conta pessoal `gquental` / `team_2sjFcoePiJ8zbmnwDwxRD3mu`, plano Hobby. https://feel-cerebro.vercel.app |
-| **GitHub** | ✅ push concluído, **público** — 11 commits em `main` | https://github.com/quentalgabriel-cloud/feel-cerebro |
+| **Vercel** | ⚠️ **já ligado ao Git, mas quebrado** | Projeto `feel-cerebro` (`prj_hGJNBOrBMLIABHAbi0uo1CA1Gstx`), conta pessoal `gquental` / `team_2sjFcoePiJ8zbmnwDwxRD3mu`, plano Hobby. https://feel-cerebro.vercel.app |
+| **GitHub** | ✅ push concluído, **público** — 12 commits em `main` | https://github.com/quentalgabriel-cloud/feel-cerebro |
 
-**Vercel é deploy por arquivo, não por Git.** O projeto não está ligado a
-repositório nenhum — cada deploy foi feito enviando a árvore de arquivos.
-Trocar por deploy contínuo é um item aberto (ver abaixo).
+**Descoberta em 2026-09-02 (tarde): o projeto Vercel já está ligado ao
+GitHub** — provavelmente Gabriel conectou pelo painel em algum momento,
+já que `list_deployments` mostra `githubCommitSha`/`githubOrg` reais nos
+dois deploys mais recentes, cada um disparado automaticamente por um push
+que fiz nesta sessão. **Os dois falharam com `ERROR`.** Causa confirmada
+nos build logs: o Root Directory do projeto Vercel não está configurado
+como `app` — o build roda a partir da raiz do repositório, então o alias
+de import `@/*` (que o `tsconfig.json` de dentro de `app/` mapeia para
+`./src/*`) não resolve, e o `tsc` falha com dezenas de `Cannot find
+module '@/lib/...'`. Isso nunca apareceu nos deploys por arquivo porque
+`deploy_to_vercel` sempre enviou só o conteúdo de `app/` como se fosse a
+raiz — o descompasso só existe no caminho por Git.
+
+**Correção (uma ação sua, sem ferramenta MCP para isso):**
+1. Abra o projeto no painel Vercel → **Settings → General → Build and
+   Development Settings → Root Directory** → digite `app` → Save.
+2. Vá em **Deployments**, ache o deploy mais recente (commit
+   `feat(auth): login por email e senha...`) e clique **Redeploy** — ou
+   simplesmente aguarde o próximo push, que já vai construir certo.
+
+Depois disso, deploy contínuo por Git passa a funcionar de verdade — cada
+push em `main` builda e publica sozinho, sem precisar mais do
+`deploy_to_vercel` por árvore de arquivos (que é caro em contexto e tem
+risco de transcrição, como ficou claro tentando usá-lo nesta sessão).
 
 **Duas autorizações explícitas do Gabriel governam a infra**, e continuam
 valendo até ele dizer o contrário:
@@ -96,11 +117,12 @@ pendente** — todos dependem do Gabriel e podem já ter sido resolvidos.
   (`NEXT<=3`, validação de state), E2E (autenticar → criar projeto → setar
   NOW/NEXT → Quick Capture → recarregar → persistiu) e os ADRs mínimos
   (`docs/ARCHITECTURE.md`, `SCOPE.md`, `SECURITY.md`, `docs/adr/`).
-- **Deploy contínuo** — trocar deploy por arquivo por `create_git_project`
-  quando os commits estiverem no GitHub. ⚠️ Essa ferramenta pode criar um
-  projeto Vercel **novo** em vez de reconectar o existente, o que levaria a
-  URL de produção junto. Confirmar o comportamento antes de rodar; ligar
-  pelo painel é um clique e não arrisca nada.
+- ~~Deploy contínuo~~ — **já existe** (ver acima); só falta o Root
+  Directory = `app` no painel para os builds pararem de falhar. Depois
+  disso, não use `mcp__Vercel__create_git_project` nesse projeto — a
+  própria ferramenta avisa que não reconecta um projeto existente sem
+  Git ligado, e este já tem. Reservar essa ferramenta só para um projeto
+  Vercel que ainda não exista.
 - **Código da Fase 03 parado** em `app/src/_fase03/` — fluxo de promoção
   com Octokit que funcionava no modelo single-tenant. Fora do App Router e
   fora do `tsconfig`, portanto não vira rota e não entra no build. Volta
