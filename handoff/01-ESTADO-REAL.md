@@ -110,10 +110,11 @@ pendente** — todos dependem do Gabriel e podem já ter sido resolvidos.
 
 ## Aberto, não bloqueado
 
-- **Fase 01 sem gate formal fechado** — faltam testes unitários
-  (`NEXT<=3`, validação de state), E2E (autenticar → criar projeto → setar
-  NOW/NEXT → Quick Capture → recarregar → persistiu) e os ADRs mínimos
-  (`docs/ARCHITECTURE.md`, `SCOPE.md`, `SECURITY.md`, `docs/adr/`).
+- ~~Fase 01 sem gate formal fechado~~ — **fechado em 2026-09-03 como
+  `PHASE 01: PARTIAL`**, com o veredito e a apuração em
+  `docs/GATE-FASE-01.md`. Testes unitários, E2E e os documentos de
+  arquitetura existem; 11 dos 12 critérios de aceite fecham. O único que
+  falta é dogfood — e é por isso que o veredito não é PASS.
 - ~~Deploy contínuo~~ — **já existe** (ver acima); só falta o Root
   Directory = `app` no painel para os builds pararem de falhar. Depois
   disso, não use `mcp__Vercel__create_git_project` nesse projeto — a
