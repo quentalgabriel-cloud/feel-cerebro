@@ -9,33 +9,25 @@ dito.
 | Peça | Estado | Identificadores |
 |---|---|---|
 | **Supabase** | ✅ ativo | Projeto `feel-cerebro` (`rvctaywzzipimrpjfkqi`), org `massa-hub`, região `sa-east-1`, Postgres 17.6, `https://rvctaywzzipimrpjfkqi.supabase.co` |
-| **Vercel** | ⚠️ **já ligado ao Git, mas quebrado** | Projeto `feel-cerebro` (`prj_hGJNBOrBMLIABHAbi0uo1CA1Gstx`), conta pessoal `gquental` / `team_2sjFcoePiJ8zbmnwDwxRD3mu`, plano Hobby. https://feel-cerebro.vercel.app |
+| **Vercel** | ✅ deploy contínuo por Git, funcionando | Projeto `feel-cerebro` (`prj_hGJNBOrBMLIABHAbi0uo1CA1Gstx`), conta pessoal `gquental` / `team_2sjFcoePiJ8zbmnwDwxRD3mu`, plano Hobby. https://feel-cerebro.vercel.app |
 | **GitHub** | ✅ push concluído, **público** — 12 commits em `main` | https://github.com/quentalgabriel-cloud/feel-cerebro |
 
-**Descoberta em 2026-09-02 (tarde): o projeto Vercel já está ligado ao
-GitHub** — provavelmente Gabriel conectou pelo painel em algum momento,
-já que `list_deployments` mostra `githubCommitSha`/`githubOrg` reais nos
-dois deploys mais recentes, cada um disparado automaticamente por um push
-que fiz nesta sessão. **Os dois falharam com `ERROR`.** Causa confirmada
-nos build logs: o Root Directory do projeto Vercel não está configurado
-como `app` — o build roda a partir da raiz do repositório, então o alias
-de import `@/*` (que o `tsconfig.json` de dentro de `app/` mapeia para
-`./src/*`) não resolve, e o `tsc` falha com dezenas de `Cannot find
-module '@/lib/...'`. Isso nunca apareceu nos deploys por arquivo porque
+**Descoberta e correção em 2026-09-02 (tarde): o projeto Vercel já estava
+ligado ao GitHub** — provavelmente Gabriel conectou pelo painel em algum
+momento — mas os dois primeiros deploys automáticos disparados por pushes
+desta sessão falharam com `ERROR`. Causa confirmada nos build logs: o
+Root Directory do projeto não estava configurado como `app`, então o
+build rodava a partir da raiz do repositório e o alias de import `@/*`
+(que o `tsconfig.json` de dentro de `app/` mapeia para `./src/*`) não
+resolvia. Isso nunca apareceu nos deploys por arquivo porque
 `deploy_to_vercel` sempre enviou só o conteúdo de `app/` como se fosse a
-raiz — o descompasso só existe no caminho por Git.
-
-**Correção (uma ação sua, sem ferramenta MCP para isso):**
-1. Abra o projeto no painel Vercel → **Settings → General → Build and
-   Development Settings → Root Directory** → digite `app` → Save.
-2. Vá em **Deployments**, ache o deploy mais recente (commit
-   `feat(auth): login por email e senha...`) e clique **Redeploy** — ou
-   simplesmente aguarde o próximo push, que já vai construir certo.
-
-Depois disso, deploy contínuo por Git passa a funcionar de verdade — cada
-push em `main` builda e publica sozinho, sem precisar mais do
-`deploy_to_vercel` por árvore de arquivos (que é caro em contexto e tem
-risco de transcrição, como ficou claro tentando usá-lo nesta sessão).
+raiz — o descompasso só existia no caminho por Git. **Gabriel corrigiu
+pelo painel** (Settings → General → Root Directory → `app`) e o redeploy
+seguinte (`dpl_Eimo6toFujpTkwGuvwje8V81HH3w`, commit `c86b2b8`) ficou
+`READY`. Confirmado batendo direto na URL de produção: `/login` serve a
+versão nova (email+senha) e `/api/cron/keepalive` sem credencial continua
+`401`. Deploy por arquivo não é mais necessário — todo push em `main`
+builda e publica sozinho.
 
 **Duas autorizações explícitas do Gabriel governam a infra**, e continuam
 valendo até ele dizer o contrário:
@@ -84,26 +76,31 @@ Verificação na última execução: `tsc --noEmit` ✅ · `eslint` ✅ ·
 **Confira o estado atual de cada um antes de assumir que continua
 pendente** — todos dependem do Gabriel e podem já ter sido resolvidos.
 
-1. **Magic link redireciona para `localhost` — status incerto.** O código
-   está certo (`emailRedirectTo` aponta para a origem correta). O Supabase
-   Auth só aceita destinos que estejam na allow-list do painel, e ignora o
-   resto caindo no Site URL padrão. Correção: [URL Configuration](https://supabase.com/dashboard/project/rvctaywzzipimrpjfkqi/auth/url-configuration)
-   → Site URL = `https://feel-cerebro.vercel.app`, e adicionar
-   `https://feel-cerebro.vercel.app/auth/callback` em Redirect URLs. **Não
-   existe ferramenta MCP que leia ou altere isso.** Consultei `auth.users`
-   em 2026-09-02: existe **um** usuário (`quentalgabriel1@gmail.com`),
-   criado e confirmado em 2026-09-01 05:59 UTC, com login em 2026-09-01
-   09:16 UTC — os três horários próximos entre si sugerem teste em
-   ambiente local (onde `localhost` é o destino certo, não o bug), não uma
-   confirmação de que o fix em produção já foi aplicado. **Não dá para
-   concluir que o bug foi corrigido só com este dado — perguntar ao
-   Gabriel ou pedir um novo login a partir da URL de produção.**
-2. ~~Push para o GitHub~~ — **resolvido em 2026-09-02.** 11 commits em
+1. ~~Magic link redireciona para `localhost`~~ — **resolvido em
+   2026-09-02, mas trocando o mecanismo, não consertando o antigo.**
+   Mesmo depois do ajuste na URL Configuration, Gabriel confirmou que o
+   redirect continuava preso em `localhost`. Em vez de insistir na
+   allow-list do Supabase (painel, sem ferramenta MCP), o login virou
+   **email+senha** (`signInWithPassword`, ver `login/page.tsx`) — não
+   depende de `emailRedirectTo` nem de nenhuma allow-list. Senha da conta
+   existente definida via SQL direto (`crypt()`/pgcrypto, já disponível no
+   projeto), sem novo env var. **Confirmado funcionando em produção**:
+   login real às 2026-09-02 20:50 UTC (`auth.users.last_sign_in_at`),
+   página servida por `feel-cerebro.vercel.app/login` já é a versão nova.
+   Consequência: não há autocadastro público — contas continuam
+   provisionadas manualmente (ver comentário no topo de `login/page.tsx`
+   sobre por quê).
+2. ~~Push para o GitHub~~ — **resolvido em 2026-09-02.** 12 commits em
    `main`, publicados pela máquina do Gabriel via GitHub Desktop
    (o proxy de git da sessão continua recusando escrita direta; isso não
    mudou e vale para qualquer sessão futura — o caminho que funciona é
    sempre a máquina do usuário).
-3. **Dogfood real — confirmado ausente.** Consulta direta em 2026-09-02:
+3. ~~Deploy contínuo quebrado~~ — **resolvido em 2026-09-02.** O projeto
+   Vercel já estava ligado ao Git (achado nesta sessão); faltava só o
+   Root Directory = `app`, que Gabriel ajustou pelo painel. Deploy por
+   arquivo (`deploy_to_vercel`) não é mais necessário — todo push em
+   `main` builda e publica sozinho.
+4. **Dogfood real — confirmado ausente.** Consulta direta em 2026-09-02:
    `projects` tem **zero linhas** e `events` tem **zero linhas**. Ninguém
    criou o projeto "Feel" de verdade, com objetivo e NOW/NEXT/NOT NOW
    reais. A Fase 02 depende disso: sem uso real não há `events` reais, e
