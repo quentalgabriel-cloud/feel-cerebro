@@ -3,20 +3,20 @@
 import { createClient } from "@/lib/supabase/server";
 import { ensureProfile } from "@/lib/profile";
 import { logEvent } from "@/lib/events";
+import { fail, ok, MSG, type ActionResult } from "@/lib/action-result";
+import { tituloSugerido } from "@/lib/capture-rules";
 
-// Heurística de título: primeira linha não vazia. Nunca decide sozinha, só
-// sugere — quem promove (Fase 03) confirma ou troca.
-function tituloSugerido(texto: string): string | null {
-  const linha = texto
-    .split("\n")
-    .map((l) => l.trim())
-    .find((l) => l.length > 0);
-  return linha ? linha.slice(0, 120) : null;
-}
-
-export async function captureText(projectId: string, texto: string) {
+// Devolve resultado porque o Quick Capture precisa saber se gravou: se
+// falhar e a UI limpar o campo mesmo assim, a pessoa perde o que escreveu —
+// exatamente o que o requisito de FALHAS da Fase 01 proíbe ("sessão expirada
+// → volta ao login sem perder rascunho de captura").
+export async function captureText(
+  projectId: string,
+  texto: string,
+): Promise<ActionResult> {
   const profile = await ensureProfile();
-  if (!profile || !texto.trim()) return;
+  if (!profile) return fail(MSG.sessao);
+  if (!texto.trim()) return fail("Não há nada para capturar.");
 
   const supabase = await createClient();
 
@@ -29,9 +29,14 @@ export async function captureText(projectId: string, texto: string) {
     status: "ready_for_review",
   });
 
-  if (error) return;
+  if (error) {
+    console.error("captureText: falha ao inserir candidate", error);
+    return fail(MSG.escrita);
+  }
 
   await logEvent(projectId, "candidate.created", profile.id, {
     content: tituloSugerido(texto),
   });
+
+  return ok;
 }

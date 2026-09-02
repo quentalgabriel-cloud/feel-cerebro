@@ -15,6 +15,12 @@ app/*.tsbuildinfo
 app/next-env.d.ts
 app/.vercel
 
+# saída de teste — artefato, não fonte
+app/test-results/
+app/playwright-report/
+app/blob-report/
+app/.playwright/
+
 # env files reais nunca commitados — o .example fica, é documentação
 .env
 .env.local

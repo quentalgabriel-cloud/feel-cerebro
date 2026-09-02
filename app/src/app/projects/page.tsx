@@ -2,6 +2,8 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { ensureProfile } from "@/lib/profile";
+import { ActionForm } from "@/components/action-form";
+import { DataError } from "@/components/data-error";
 import { createProject } from "./actions";
 import type { Project } from "@/lib/types";
 
@@ -10,7 +12,7 @@ export default async function ProjectsPage() {
   if (!profile) redirect("/login");
 
   const supabase = await createClient();
-  const { data: projects } = await supabase
+  const { data: projects, error } = await supabase
     .from("projects")
     .select("*")
     .is("archived_at", null)
@@ -26,6 +28,13 @@ export default async function ProjectsPage() {
           Olá, {profile.name}.
         </p>
       </header>
+
+      {/* Erro de leitura não pode virar "você não tem projetos". */}
+      {error && (
+        <div className="mb-8">
+          <DataError contexto="seus projetos" />
+        </div>
+      )}
 
       {lista.length > 0 && (
         <ul className="mb-12 flex flex-col gap-2">
@@ -49,59 +58,63 @@ export default async function ProjectsPage() {
 
       <section className="rounded-lg border border-dashed border-neutral-300 p-6">
         <h2 className="text-sm font-semibold">
-          {lista.length === 0 ? "Comece pelo primeiro projeto" : "Novo projeto"}
+          {lista.length === 0 && !error
+            ? "Comece pelo primeiro projeto"
+            : "Novo projeto"}
         </h2>
         <p className="mt-1 text-xs text-neutral-500">
           Duas perguntas bastam para começar. O resto vem com o uso.
         </p>
 
-        <form action={createProject} className="mt-5 flex flex-col gap-4">
-          <label className="flex flex-col gap-1.5 text-sm">
-            <span className="font-medium">Nome</span>
-            <input
-              name="name"
-              required
-              placeholder="Feel"
-              className="rounded-md border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-neutral-900"
-            />
-          </label>
+        <div className="mt-5">
+          <ActionForm action={createProject} className="flex flex-col gap-4">
+            <label className="flex flex-col gap-1.5 text-sm">
+              <span className="font-medium">Nome</span>
+              <input
+                name="name"
+                required
+                placeholder="Feel"
+                className="rounded-md border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-neutral-900"
+              />
+            </label>
 
-          <label className="flex flex-col gap-1.5 text-sm">
-            <span className="font-medium">O que estamos construindo?</span>
-            <textarea
-              name="what_building"
-              rows={2}
-              className="rounded-md border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-neutral-900"
-            />
-          </label>
+            <label className="flex flex-col gap-1.5 text-sm">
+              <span className="font-medium">O que estamos construindo?</span>
+              <textarea
+                name="what_building"
+                rows={2}
+                className="rounded-md border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-neutral-900"
+              />
+            </label>
 
-          <label className="flex flex-col gap-1.5 text-sm">
-            <span className="font-medium">Por que isso precisa existir?</span>
-            <textarea
-              name="why_exists"
-              rows={2}
-              className="rounded-md border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-neutral-900"
-            />
-          </label>
+            <label className="flex flex-col gap-1.5 text-sm">
+              <span className="font-medium">Por que isso precisa existir?</span>
+              <textarea
+                name="why_exists"
+                rows={2}
+                className="rounded-md border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-neutral-900"
+              />
+            </label>
 
-          <label className="flex flex-col gap-1.5 text-sm">
-            <span className="font-medium">
-              Objetivo atual{" "}
-              <span className="font-normal text-neutral-400">(opcional)</span>
-            </span>
-            <input
-              name="objective"
-              className="rounded-md border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-neutral-900"
-            />
-          </label>
+            <label className="flex flex-col gap-1.5 text-sm">
+              <span className="font-medium">
+                Objetivo atual{" "}
+                <span className="font-normal text-neutral-400">(opcional)</span>
+              </span>
+              <input
+                name="objective"
+                className="rounded-md border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-neutral-900"
+              />
+            </label>
 
-          <button
-            type="submit"
-            className="self-start rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-neutral-700"
-          >
-            Criar projeto
-          </button>
-        </form>
+            <button
+              type="submit"
+              className="self-start rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-neutral-700"
+            >
+              Criar projeto
+            </button>
+          </ActionForm>
+        </div>
       </section>
     </main>
   );

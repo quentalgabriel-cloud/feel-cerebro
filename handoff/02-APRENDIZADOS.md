@@ -124,6 +124,71 @@ existe — vale para tenancy, para papéis e para as invariantes de domínio
 
 ---
 
+## 5b. Early return pula o passo que foi criado depois
+
+**O que aconteceu.** `ensureProfile()` criava o profile e, no mesmo request,
+a organização pessoal. Quem já tinha profile saía na primeira linha:
+
+```ts
+if (existing) return existing as Profile;   // e a organização? nunca mais.
+```
+
+O profile do Gabriel era anterior à migration que introduziu o bootstrap de
+organização. Ele tinha profile, nunca teve organização, e **todo login
+seguinte batia nesse return e nunca tentava de novo**. Meses depois, criar
+projeto simplesmente não funcionava — para ele, e só para ele.
+
+**A regra.** Quando um passo novo é acrescentado a um fluxo de inicialização,
+os registros que nasceram **antes** dele nunca vão executá-lo. Ou a
+inicialização é idempotente e roda inteira toda vez — verificando cada
+invariante em vez de assumir "se A existe, B também existe" — ou existe uma
+migration que conserta o passado. As duas coisas são trabalho; escolher
+nenhuma é escolher que uma parte dos usuários fique quebrada em silêncio.
+
+**Sinal de alerta:** `if (x) return x` no começo de uma função de
+`ensure*`/`getOrCreate*`. Pergunte: *o que mais essa função garantia, e quem
+entrou por este atalho está garantido?*
+
+---
+
+## 5c. Server Action que retorna mudo é um formulário que mente
+
+**O que aconteceu.** Consequência do item anterior, e foi a parte cara. A
+ação tinha `if (!membership) return;`. O formulário submetia, a ação não
+escrevia nada, e a tela não mudava. Gabriel tentou várias vezes antes de
+reportar — não havia como distinguir "falhou" de "eu preenchi errado". Um bug
+de dado (5b) ficou escondido horas atrás de um bug de interface.
+
+**A regra.** Em Server Action, `return` sem valor é indistinguível de sucesso
+para quem está olhando a tela. Toda ação alcançável por formulário devolve
+resultado, e o formulário mostra. Corolário que vale igual: **erro de leitura
+nunca pode virar empty state** — página que renderiza "nada ainda" quando a
+query falhou mente com confiança, e isso é pior que tela branca, porque tela
+branca ninguém confunde com dado.
+
+O padrão adotado está em `docs/adr/0007-falha-visivel-em-server-action.md`.
+
+---
+
+## 5d. Lógica de decisão que precisa de banco só é testada em produção
+
+**O que aconteceu.** O bug de 5b era testável em dez linhas — mas a decisão
+morava dentro de uma função que só roda com Supabase e sessão HTTP, então
+nunca teve teste. A correção veio junto com a extração: a decisão de "criar
+organização ou não" virou `lib/org-bootstrap.ts`, que recebe uma porta
+estreita (`OrgStore`) e não conhece Supabase nenhum. O teste implementa a
+porta à mão e prova o caso real.
+
+**A prova de que o teste vale:** reintroduzi o `if (existing) return` antigo
+e a suíte ficou vermelha exatamente no teste certo; removi, voltou verde. Um
+teste de regressão que nunca foi visto falhando é um teste que você espera
+que funcione.
+
+**A regra.** Se a decisão é interessante, ela sai de perto do I/O. O que fica
+junto do banco é tradução de chamada, que erra pouco e erra visível.
+
+---
+
 ## 6. Erros meus de raciocínio — os mais caros
 
 ### 6.1 Li a mensagem de erro rápido demais e dei conselho errado duas vezes

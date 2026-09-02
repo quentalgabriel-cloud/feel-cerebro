@@ -2,6 +2,8 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getProjectBySlug } from "@/lib/profile";
 import { EVENT_LABEL } from "@/lib/events";
+import { ActionForm } from "@/components/action-form";
+import { DataError } from "@/components/data-error";
 import { MAX_NEXT, type ProjectEvent, type ProjectState, type StateItem } from "@/lib/types";
 import { addItem, promoteToNext, removeItem, setObjective } from "./actions";
 
@@ -16,7 +18,11 @@ export default async function NowPage({
 
   const supabase = await createClient();
 
-  const [{ data: estado }, { data: itens }, { data: eventos }] = await Promise.all([
+  const [
+    { data: estado },
+    { data: itens, error: erroItens },
+    { data: eventos, error: erroEventos },
+  ] = await Promise.all([
     supabase.from("project_state").select("*").eq("project_id", project.id).maybeSingle(),
     supabase
       .from("state_items")
@@ -44,7 +50,7 @@ export default async function NowPage({
         <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-widest text-neutral-400">
           Objetivo
         </h2>
-        <form action={setObjective.bind(null, slug)} className="flex gap-2">
+        <ActionForm action={setObjective.bind(null, slug)} className="flex gap-2">
           <input
             name="objective"
             defaultValue={state?.objective ?? ""}
@@ -57,10 +63,19 @@ export default async function NowPage({
           >
             Salvar
           </button>
-        </form>
+        </ActionForm>
       </section>
 
+      {/* Leitura falhou: não dá para mostrar NOW/NEXT/NOT NOW vazios como se
+          fossem o estado real — quem visse isso definiria um segundo NOW. */}
+      {erroItens && (
+        <div className="mb-10">
+          <DataError contexto="o estado deste projeto" />
+        </div>
+      )}
+
       {/* NOW — um, e só um */}
+      {!erroItens && (
       <section className="mb-10">
         <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-widest text-neutral-400">
           Now
@@ -68,14 +83,14 @@ export default async function NowPage({
         {now ? (
           <div className="flex items-start gap-3 rounded-lg border-l-2 border-neutral-900 bg-neutral-50 px-4 py-3">
             <p className="flex-1 text-base leading-relaxed">{now.content}</p>
-            <form action={removeItem.bind(null, slug, now.id)}>
+            <ActionForm action={removeItem.bind(null, slug, now.id)}>
               <button className="text-xs text-neutral-400 transition hover:text-neutral-900">
                 concluir
               </button>
-            </form>
+            </ActionForm>
           </div>
         ) : (
-          <form action={addItem.bind(null, slug, "now")} className="flex gap-2">
+          <ActionForm action={addItem.bind(null, slug, "now")} className="flex gap-2">
             <input
               name="content"
               required
@@ -85,9 +100,11 @@ export default async function NowPage({
             <button className="rounded-md bg-neutral-900 px-3 py-2 text-xs font-medium text-white transition hover:bg-neutral-700">
               Definir
             </button>
-          </form>
+          </ActionForm>
         )}
       </section>
+
+      )}
 
       {/* O que mudou — determinístico, a partir de events */}
       <section className="mb-10">
@@ -121,6 +138,8 @@ export default async function NowPage({
               ),
             )}
           </ul>
+        ) : erroEventos ? (
+          <DataError contexto="o histórico" />
         ) : (
           <p className="text-xs text-neutral-400">
             Nada ainda. O histórico começa no primeiro movimento.
@@ -129,6 +148,7 @@ export default async function NowPage({
       </section>
 
       {/* NEXT — no máximo três */}
+      {!erroItens && (
       <section className="mb-10">
         <h2 className="mb-2 flex items-baseline gap-2 text-[11px] font-semibold uppercase tracking-widest text-neutral-400">
           Next
@@ -143,16 +163,16 @@ export default async function NowPage({
               className="flex items-start gap-3 rounded-md border border-neutral-200 px-3 py-2"
             >
               <span className="flex-1 text-sm">{item.content}</span>
-              <form action={removeItem.bind(null, slug, item.id)}>
+              <ActionForm action={removeItem.bind(null, slug, item.id)}>
                 <button className="text-xs text-neutral-400 transition hover:text-neutral-900">
                   remover
                 </button>
-              </form>
+              </ActionForm>
             </li>
           ))}
         </ul>
         {next.length < MAX_NEXT ? (
-          <form action={addItem.bind(null, slug, "next")} className="flex gap-2">
+          <ActionForm action={addItem.bind(null, slug, "next")} className="flex gap-2">
             <input
               name="content"
               required
@@ -162,7 +182,7 @@ export default async function NowPage({
             <button className="rounded-md border border-neutral-300 px-3 py-2 text-xs font-medium transition hover:border-neutral-900">
               Adicionar
             </button>
-          </form>
+          </ActionForm>
         ) : (
           <p className="text-xs text-neutral-400">
             Três é o teto. Para adicionar outro, conclua ou remova um.
@@ -170,7 +190,10 @@ export default async function NowPage({
         )}
       </section>
 
+      )}
+
       {/* NOT NOW — guardar sem inflar o escopo */}
+      {!erroItens && (
       <section>
         <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-widest text-neutral-400">
           Not now
@@ -182,20 +205,20 @@ export default async function NowPage({
               className="flex items-start gap-3 rounded-md px-3 py-1.5 text-neutral-500"
             >
               <span className="flex-1 text-sm">{item.content}</span>
-              <form action={promoteToNext.bind(null, slug, item.id)}>
+              <ActionForm action={promoteToNext.bind(null, slug, item.id)}>
                 <button className="text-xs text-neutral-400 transition hover:text-neutral-900">
                   → next
                 </button>
-              </form>
-              <form action={removeItem.bind(null, slug, item.id)}>
+              </ActionForm>
+              <ActionForm action={removeItem.bind(null, slug, item.id)}>
                 <button className="text-xs text-neutral-400 transition hover:text-neutral-900">
                   descartar
                 </button>
-              </form>
+              </ActionForm>
             </li>
           ))}
         </ul>
-        <form action={addItem.bind(null, slug, "not_now")} className="flex gap-2">
+        <ActionForm action={addItem.bind(null, slug, "not_now")} className="flex gap-2">
           <input
             name="content"
             required
@@ -205,8 +228,9 @@ export default async function NowPage({
           <button className="rounded-md px-3 py-2 text-xs text-neutral-500 transition hover:bg-neutral-100 hover:text-neutral-900">
             Guardar
           </button>
-        </form>
+        </ActionForm>
       </section>
+      )}
     </main>
   );
 }

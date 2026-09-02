@@ -1,17 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import type { Profile, Project } from "@/lib/types";
-
-export function slugify(text: string): string {
-  return (
-    text
-      .toLowerCase()
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/(^-|-$)/g, "")
-      .slice(0, 48) || "projeto"
-  );
-}
+import { ensureOrganization, type OrgStore } from "@/lib/org-bootstrap";
 
 // Resolve o usuário do Supabase Auth para a linha em `profiles`, criando-a no
 // primeiro login junto com uma organização pessoal — senão a pessoa entra e
@@ -65,51 +54,55 @@ export async function ensureProfile(): Promise<Profile | null> {
     profile = inserted as Profile;
   }
 
-  await ensureOrganization(supabase, profile);
+  const bootstrap = await ensureOrganization(orgStore(supabase), profile);
+  if (bootstrap.estado === "falhou") {
+    console.error("ensureProfile: bootstrap de organização falhou", bootstrap.onde);
+  }
 
   return profile;
 }
 
-// Garante que o profile tem pelo menos uma organização — rodando em TODO
-// login, não só no primeiro. Idempotente: se já existe membership (mesmo
-// que a RLS só deixe ver a própria), não faz nada.
-async function ensureOrganization(
+// Adaptador do Supabase para a porta `OrgStore`. A decisão de quando criar
+// mora em lib/org-bootstrap.ts, que é testável sem banco; aqui só se traduz
+// para as chamadas do supabase-js.
+function orgStore(
   supabase: Awaited<ReturnType<typeof createClient>>,
-  profile: Profile,
-): Promise<void> {
-  const { data: membership } = await supabase
-    .from("organization_members")
-    .select("organization_id")
-    .limit(1)
-    .maybeSingle();
+): OrgStore {
+  return {
+    async temMembership() {
+      const { data, error } = await supabase
+        .from("organization_members")
+        .select("organization_id")
+        .limit(1)
+        .maybeSingle();
+      return { existe: Boolean(data), erro: error ?? undefined };
+    },
 
-  if (membership) return;
+    async criarOrganizacao(input) {
+      const { data, error } = await supabase
+        .from("organizations")
+        .insert(input)
+        .select("id")
+        .single();
+      if (error || !data) {
+        console.error("orgStore: falha ao criar organização", error);
+        return null;
+      }
+      return { id: data.id as string };
+    },
 
-  const { data: org, error: orgError } = await supabase
-    .from("organizations")
-    .insert({
-      name: `Espaço de ${profile.name}`,
-      slug: `${slugify(profile.name)}-${Math.random().toString(36).slice(2, 7)}`,
-    })
-    .select()
-    .single();
-
-  if (orgError || !org) {
-    console.error("ensureOrganization: falha ao criar organização", orgError);
-    return;
-  }
-
-  const { error: memberError } = await supabase
-    .from("organization_members")
-    .insert({
-      organization_id: org.id,
-      profile_id: profile.id,
-      role: "owner",
-    });
-
-  if (memberError) {
-    console.error("ensureOrganization: falha ao entrar na organização", memberError);
-  }
+    async entrarComoOwner(organizationId, profileId) {
+      const { error } = await supabase.from("organization_members").insert({
+        organization_id: organizationId,
+        profile_id: profileId,
+        role: "owner",
+      });
+      if (error) {
+        console.error("orgStore: falha ao entrar na organização", error);
+      }
+      return { erro: error ?? undefined };
+    },
+  };
 }
 
 // Projeto pelo slug, já filtrado por RLS: se a pessoa não for membro, o banco

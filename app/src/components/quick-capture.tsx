@@ -12,6 +12,7 @@ export function QuickCapture({ projectId }: { projectId: string }) {
   const [aberto, setAberto] = useState(false);
   const [texto, setTexto] = useState("");
   const [salvando, setSalvando] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
   const ref = useRef<HTMLTextAreaElement>(null);
   const router = useRouter();
 
@@ -31,12 +32,24 @@ export function QuickCapture({ projectId }: { projectId: string }) {
     if (aberto) ref.current?.focus();
   }, [aberto]);
 
+  // O texto só é apagado depois que a gravação confirma. Se falhar — sessão
+  // expirada, banco fora —, o rascunho continua na tela e a pessoa vê por
+  // quê. Limpar antes de confirmar é como se perde o que alguém escreveu.
   async function salvar() {
     if (!texto.trim() || salvando) return;
     setSalvando(true);
-    await captureText(projectId, texto);
-    setTexto("");
+    setErro(null);
+
+    const resultado = await captureText(projectId, texto);
+
     setSalvando(false);
+
+    if (!resultado.ok) {
+      setErro(resultado.message);
+      return;
+    }
+
+    setTexto("");
     setAberto(false);
     router.refresh();
   }
@@ -73,6 +86,12 @@ export function QuickCapture({ projectId }: { projectId: string }) {
               placeholder="Cole ou escreva. Sem classificar nada agora."
               className="w-full resize-none rounded-md border border-neutral-200 p-3 text-sm outline-none focus:border-neutral-400"
             />
+            {erro && (
+              <p role="alert" className="mt-2 text-xs leading-relaxed text-red-600">
+                {erro}
+              </p>
+            )}
+
             <div className="mt-2 flex items-center justify-between">
               <span className="text-[11px] text-neutral-400">
                 ⌘↵ para salvar · esc para fechar
