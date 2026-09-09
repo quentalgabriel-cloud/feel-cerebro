@@ -10,6 +10,7 @@ import {
   renderizarMarkdown,
   type ItemCanonico,
 } from "@/lib/knowledge-markdown";
+import { tituloSugerido } from "@/lib/capture-rules";
 import type { KnowledgeType } from "@/lib/types";
 
 // Promoção: de captura para conhecimento canônico.
@@ -134,6 +135,110 @@ export async function promoverCandidate(
 
   await logEvent(project.id, "candidate.created", profile.id, {
     content: `promoção pedida: ${displayId} — ${titulo}`,
+  });
+
+  revalidatePath(`/p/${slug}/memory`);
+  return ok;
+}
+
+
+// ── upload ──────────────────────────────────────────────────────────────────
+//
+// Registra o que o navegador já subiu para o Storage. Esta ação nunca carrega
+// o arquivo — ela recebe o caminho e os metadados, e amarra as três linhas que
+// preservam a proveniência:
+//
+//   raw_files   o bruto, com caminho no Storage. Nunca é descartado.
+//   sources     de onde veio, com escopo — viaja junto do conteúdo (DEC-007).
+//   candidates  o que entrou e ainda não foi decidido.
+//
+// Se a extração não aconteceu (PDF, DOCX), o candidate nasce `pending` em vez
+// de `ready_for_review`. Um candidate vazio marcado como pronto seria pior que
+// nenhum candidate: entraria na fila de revisão sem ter o que revisar.
+export async function registrarUpload(
+  slug: string,
+  dados: {
+    storagePath: string;
+    nome: string;
+    mime: string;
+    tamanho: number;
+    texto: string | null;
+  },
+): Promise<ActionResult> {
+  const profile = await ensureProfile();
+  if (!profile) return fail(MSG.sessao);
+
+  const project = await getProjectBySlug(slug);
+  if (!project) return fail(MSG.projetoNaoEncontrado);
+
+  const supabase = await createClient();
+
+  const { data: arquivo, error: erroArquivo } = await supabase
+    .from("raw_files")
+    .insert({
+      project_id: project.id,
+      storage_path: dados.storagePath,
+      original_name: dados.nome,
+      mime_type: dados.mime,
+      size_bytes: dados.tamanho,
+      uploaded_by: profile.id,
+    })
+    .select("id")
+    .single();
+
+  if (erroArquivo || !arquivo) {
+    console.error("registrarUpload: falha em raw_files", erroArquivo);
+    return fail(MSG.escrita);
+  }
+
+  const { data: source, error: erroSource } = await supabase
+    .from("sources")
+    .insert({
+      project_id: project.id,
+      kind: "upload",
+      title: dados.nome,
+      locator: dados.storagePath,
+      raw_file_id: arquivo.id,
+      raw_text: dados.texto,
+      captured_by: profile.id,
+    })
+    .select("id")
+    .single();
+
+  if (erroSource || !source) {
+    console.error("registrarUpload: falha em sources", erroSource);
+    return fail(MSG.escrita);
+  }
+
+  const extensao = dados.nome.toLowerCase().split(".").pop() ?? "";
+  const origem =
+    extensao === "pdf"
+      ? "upload_pdf"
+      : extensao === "docx"
+        ? "upload_docx"
+        : extensao === "md" || extensao === "markdown"
+          ? "upload_markdown"
+          : "upload_txt";
+
+  const { error: erroCandidate } = await supabase.from("candidates").insert({
+    project_id: project.id,
+    author_id: profile.id,
+    source_id: source.id,
+    raw_file_id: arquivo.id,
+    origin_type: origem,
+    raw_text: dados.texto,
+    suggested_title: dados.texto ? tituloSugerido(dados.texto) : dados.nome,
+    // Sem texto extraído não há o que revisar — e dizer isso é o ponto.
+    status: dados.texto ? "ready_for_review" : "pending",
+  });
+
+  if (erroCandidate) {
+    console.error("registrarUpload: falha em candidates", erroCandidate);
+    return fail(MSG.escrita);
+  }
+
+  await logEvent(project.id, "candidate.created", profile.id, {
+    content: `upload: ${dados.nome}`,
   });
 
   revalidatePath(`/p/${slug}/memory`);

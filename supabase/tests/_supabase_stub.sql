@@ -78,3 +78,13 @@ create table storage.objects (
 
 alter table storage.objects enable row level security;
 grant all on storage.buckets, storage.objects to anon, authenticated, service_role;
+
+-- `storage.foldername` existe no Supabase real e é o que as policies de bucket
+-- usam para extrair o prefixo do caminho. Sem ela aqui, a 0010 não aplicaria
+-- localmente — e a policy de storage voltaria a ficar fora do teste, que foi
+-- exatamente como o furo da 0002 passou despercebido por semanas.
+create or replace function storage.foldername(name text)
+returns text[] language sql immutable as $$
+  select string_to_array(name, '/');
+$$;
+grant execute on function storage.foldername(text) to anon, authenticated, service_role;

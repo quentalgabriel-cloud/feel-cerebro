@@ -430,6 +430,71 @@ begin
 end $$;
 
 -- ---------------------------------------------------------------------
+-- 8. O BUCKET DE ARQUIVOS BRUTOS (0010)
+--
+-- A policy original liberava o bucket inteiro para qualquer autenticado.
+-- Ninguém notou porque `storage.objects` estava fora desta suíte — e o
+-- caminho é `<project_id>/...`, então bastava conhecer um uuid de projeto,
+-- que aparece em URL e em log, para baixar o PDF de estratégia alheio.
+-- ---------------------------------------------------------------------
+
+set local role postgres;
+insert into storage.buckets (id, name, public) values ('raw-files', 'raw-files', false)
+  on conflict (id) do nothing;
+insert into storage.objects (bucket_id, name)
+values ('raw-files', 'a0000000-0000-0000-0000-0000000000f1/aaaaaaaa-0000-0000-0000-000000000001/estrategia-acme.pdf');
+
+set local role authenticated;
+
+-- Ana é da Acme: enxerga o arquivo da Acme.
+set local request.jwt.claims = '{"sub":"11111111-1111-1111-1111-111111111111","role":"authenticated"}';
+do $$
+begin
+  perform assert_eq((select count(*) from storage.objects), 1, 'Ana ve o arquivo do proprio projeto');
+end $$;
+
+-- Bruno não. Este é o teste que a 0002 nunca teve.
+set local request.jwt.claims = '{"sub":"22222222-2222-2222-2222-222222222222","role":"authenticated"}';
+do $$
+begin
+  perform assert_eq((select count(*) from storage.objects), 0,
+    'VAZAMENTO GRAVE: Bruno listou arquivo bruto de outra organizacao');
+end $$;
+
+do $$
+declare escreveu boolean := false;
+begin
+  begin
+    insert into storage.objects (bucket_id, name)
+    values ('raw-files', 'a0000000-0000-0000-0000-0000000000f1/bbbbbbbb-0000-0000-0000-000000000002/invadido.pdf');
+    escreveu := true;
+  exception when others then
+    escreveu := false;
+  end;
+
+  if escreveu then
+    raise exception 'VAZAMENTO GRAVE: Bruno enviou arquivo para projeto alheio';
+  end if;
+end $$;
+
+-- Caminho malformado precisa ser NEGADO, nao explodir: cast de texto para
+-- uuid que falha viraria erro 500 em vez de "nao pode".
+do $$
+declare escreveu boolean := false;
+begin
+  begin
+    insert into storage.objects (bucket_id, name) values ('raw-files', 'nao-e-uuid/arquivo.pdf');
+    escreveu := true;
+  exception when others then
+    escreveu := false;
+  end;
+
+  if escreveu then
+    raise exception 'FALHA: caminho sem project_id valido foi aceito';
+  end if;
+end $$;
+
+-- ---------------------------------------------------------------------
 
 select 'RLS TEST: PASS' as resultado;
 

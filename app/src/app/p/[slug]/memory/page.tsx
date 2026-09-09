@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { getProjectBySlug } from "@/lib/profile";
+import { ensureProfile, getProjectBySlug } from "@/lib/profile";
 import { DataError } from "@/components/data-error";
 import { PromoteForm } from "@/components/promote-form";
-import { promoverCandidate } from "./actions";
+import { UploadForm } from "@/components/upload-form";
+import { promoverCandidate, registrarUpload } from "./actions";
 import {
   KNOWLEDGE_LABEL,
   type Candidate,
@@ -44,6 +45,9 @@ export default async function MemoryPage({
   const { q, tipo } = await searchParams;
   const project = await getProjectBySlug(slug);
   if (!project) notFound();
+
+  const profile = await ensureProfile();
+  if (!profile) notFound();
 
   const supabase = await createClient();
 
@@ -237,6 +241,14 @@ export default async function MemoryPage({
           </span>
         </div>
 
+        <div className="mb-4">
+          <UploadForm
+            projectId={project.id}
+            profileId={profile.id}
+            acao={registrarUpload.bind(null, slug)}
+          />
+        </div>
+
         <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-3">
           <p className="text-xs leading-relaxed text-amber-900">
             Isto <strong>não é conhecimento</strong>. É material capturado
@@ -265,9 +277,14 @@ export default async function MemoryPage({
                 <p className="text-sm font-medium">
                   {c.suggested_title ?? "(sem título)"}
                 </p>
-                {c.raw_text && (
+                {c.raw_text ? (
                   <p className="mt-1 line-clamp-2 text-xs text-neutral-500">
                     {c.raw_text}
+                  </p>
+                ) : (
+                  <p className="mt-1 text-xs text-neutral-400">
+                    Arquivo guardado íntegro, texto ainda não extraído — não há
+                    o que revisar até a extração rodar.
                   </p>
                 )}
                 <p className="mt-2 text-[11px] text-neutral-400">
