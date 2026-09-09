@@ -243,6 +243,128 @@ begin
 end $$;
 
 -- ---------------------------------------------------------------------
+-- 6. A PONTE DE CONHECIMENTO (0006) — sources e knowledge_index
+--
+-- Tabela nova é superfície nova de vazamento. Estas são as tabelas que vão
+-- guardar a estratégia dos três sócios indexada; um furo aqui é pior que
+-- um furo no NOW, porque o NOW é uma frase e o índice é o acervo inteiro.
+-- ---------------------------------------------------------------------
+
+-- Ana (owner na Acme) cria uma source e um item de conhecimento.
+--
+-- `set local role authenticated` é obrigatório aqui, e não é detalhe: a seção
+-- anterior roda como `postgres`, que **ignora RLS**. Sem esta linha, o bloco
+-- inteiro testaria superusuário chamando-o de "Bruno" — e passaria verde
+-- provando nada. Foi o que aconteceu na primeira versão deste teste.
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"11111111-1111-1111-1111-111111111111","role":"authenticated"}';
+
+insert into sources (id, project_id, kind, title, raw_text, scope, captured_by)
+values ('50000000-0000-0000-0000-000000000001',
+        'a0000000-0000-0000-0000-0000000000f1',
+        'paste', 'Fonte secreta da Acme', 'texto bruto confidencial',
+        'cliente:acme', 'aaaaaaaa-0000-0000-0000-000000000001');
+
+insert into knowledge_index
+  (project_id, display_id, type, scope, title, repo, path, body)
+values ('a0000000-0000-0000-0000-0000000000f1', 'DEC-001', 'decision',
+        'cliente:acme', 'Decisao canonica da Acme',
+        'acme/knowledge', '04-memoria/decisoes/dec-001.md',
+        'corpo da decisao que nao pode vazar');
+
+do $$
+begin
+  perform assert_eq((select count(*) from sources), 1, 'Ana ve a source que criou');
+  perform assert_eq((select count(*) from knowledge_index), 1, 'Ana ve o conhecimento da Acme');
+end $$;
+
+-- O display_id não pode sair por max()+1: com três pessoas promovendo isso
+-- é corrida de verdade (R-04). A sequência é transacional e por tipo.
+do $$
+declare a text; b text; c text;
+begin
+  a := private.next_display_id('a0000000-0000-0000-0000-0000000000f1', 'decision');
+  b := private.next_display_id('a0000000-0000-0000-0000-0000000000f1', 'decision');
+  c := private.next_display_id('a0000000-0000-0000-0000-0000000000f1', 'insight');
+
+  perform assert_eq((a = b)::int, 0, 'FALHA: display_id repetiu dentro do mesmo tipo');
+  perform assert_eq((a = 'DEC-001')::int, 1, 'display_id de decision comeca em DEC-001');
+  perform assert_eq((b = 'DEC-002')::int, 1, 'display_id de decision incrementa');
+  perform assert_eq((c = 'INS-001')::int, 1, 'cada tipo tem sequencia propria');
+end $$;
+
+-- Bruno, o forasteiro: não pode ver nem escrever nada disso.
+set local request.jwt.claims = '{"sub":"22222222-2222-2222-2222-222222222222","role":"authenticated"}';
+
+do $$
+begin
+  perform assert_eq((select count(*) from sources), 0,
+    'VAZAMENTO GRAVE: Bruno viu a source bruta de outra organizacao');
+  perform assert_eq((select count(*) from knowledge_index), 0,
+    'VAZAMENTO GRAVE: Bruno viu o conhecimento canonico de outra organizacao');
+  perform assert_eq((select count(*) from knowledge_counters), 0,
+    'VAZAMENTO: Bruno viu os contadores de outra organizacao');
+end $$;
+
+do $$
+declare escreveu boolean := false;
+begin
+  begin
+    insert into knowledge_index (project_id, display_id, type, title, repo, path)
+    values ('a0000000-0000-0000-0000-0000000000f1', 'DEC-999', 'decision',
+            'injetado pelo Bruno', 'acme/knowledge', 'fake.md');
+    escreveu := true;
+  exception when others then
+    escreveu := false;
+  end;
+
+  if escreveu then
+    raise exception 'VAZAMENTO GRAVE: Bruno indexou conhecimento na organizacao alheia';
+  end if;
+end $$;
+
+do $$
+declare escreveu boolean := false;
+begin
+  begin
+    insert into sources (project_id, kind, title, raw_text)
+    values ('a0000000-0000-0000-0000-0000000000f1', 'paste', 'fonte do Bruno', 'x');
+    escreveu := true;
+  exception when others then
+    escreveu := false;
+  end;
+
+  if escreveu then
+    raise exception 'VAZAMENTO GRAVE: Bruno criou source na organizacao alheia';
+  end if;
+end $$;
+
+-- Carla é viewer: lê o conhecimento da própria organização, mas não escreve.
+set local request.jwt.claims = '{"sub":"33333333-3333-3333-3333-333333333333","role":"authenticated"}';
+
+do $$
+begin
+  perform assert_eq((select count(*) from knowledge_index), 1, 'Carla le o conhecimento da Acme');
+end $$;
+
+do $$
+declare escreveu boolean := false;
+begin
+  begin
+    insert into knowledge_index (project_id, display_id, type, title, repo, path)
+    values ('a0000000-0000-0000-0000-0000000000f1', 'DEC-998', 'decision',
+            'viewer escrevendo', 'acme/knowledge', 'fake2.md');
+    escreveu := true;
+  exception when others then
+    escreveu := false;
+  end;
+
+  if escreveu then
+    raise exception 'FALHA: viewer conseguiu indexar conhecimento';
+  end if;
+end $$;
+
+-- ---------------------------------------------------------------------
 
 select 'RLS TEST: PASS' as resultado;
 

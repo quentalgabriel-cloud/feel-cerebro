@@ -44,11 +44,15 @@ run() {
 }
 
 run supabase/tests/_supabase_stub.sql
-run supabase/migrations/0001_foundation.sql
-run supabase/migrations/0002_storage.sql
-run supabase/migrations/0003_harden_functions.sql
-run supabase/migrations/0004_private_schema.sql
-run supabase/migrations/0005_org_bootstrap.sql
+
+# As migrations eram listadas à mão aqui, e a 0006 passou despercebida pelo
+# teste inteiro por causa disso — a mesma armadilha do bug de 2026-09-02:
+# passo novo acrescentado a um fluxo antigo nunca roda para quem já existia.
+# Agora a lista se mantém sozinha, em ordem lexicográfica (que é a ordem real
+# de aplicação, porque os arquivos são numerados com zero à esquerda).
+for m in "$ROOT"/supabase/migrations/*.sql; do
+  run "supabase/migrations/$(basename "$m")"
+done
 
 echo "→ supabase/tests/rls_test.sql"
 psql -q -d "$DB" -v ON_ERROR_STOP=1 -f "$ROOT/supabase/tests/rls_test.sql"
