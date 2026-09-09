@@ -283,9 +283,9 @@ end $$;
 do $$
 declare a text; b text; c text;
 begin
-  a := private.next_display_id('a0000000-0000-0000-0000-0000000000f1', 'decision');
-  b := private.next_display_id('a0000000-0000-0000-0000-0000000000f1', 'decision');
-  c := private.next_display_id('a0000000-0000-0000-0000-0000000000f1', 'insight');
+  a := public.next_display_id('a0000000-0000-0000-0000-0000000000f1', 'decision');
+  b := public.next_display_id('a0000000-0000-0000-0000-0000000000f1', 'decision');
+  c := public.next_display_id('a0000000-0000-0000-0000-0000000000f1', 'insight');
 
   perform assert_eq((a = b)::int, 0, 'FALHA: display_id repetiu dentro do mesmo tipo');
   perform assert_eq((a = 'DEC-001')::int, 1, 'display_id de decision comeca em DEC-001');
@@ -491,6 +491,88 @@ begin
 
   if escreveu then
     raise exception 'FALHA: caminho sem project_id valido foi aceito';
+  end if;
+end $$;
+
+-- ---------------------------------------------------------------------
+-- 9. INVARIANTES DE SUPERFICIE (0011)
+--
+-- As secoes acima testam regras. Esta testa a CLASSE de erro que produziu as
+-- regras — e existe porque eu ja tinha escrito a licao e a repeti mesmo assim.
+--
+-- A 0009 dizia `revoke execute ... from public` e eu li isso como "ninguem de
+-- fora executa". O `proacl` dizia `anon=X/postgres`. Revoke ao pseudo-papel
+-- PUBLIC nao tira concessao nominal, e o Supabase concede a `anon` por default
+-- privileges em tudo que nasce em `public`.
+--
+-- Um teste que checasse so `next_display_id` consertaria hoje. Estes tres
+-- varrem o catalogo inteiro: qualquer funcao NOVA que caia na mesma armadilha
+-- derruba a suite sem ninguem precisar lembrar de nada. E a diferenca entre
+-- corrigir um bug e fechar a porta por onde ele entra.
+--
+-- O helper de teste sai de cena antes da varredura: ele mora em `public`
+-- porque este arquivo o criou, e uma lista de excecoes seria exatamente o
+-- tipo de coisa que apodrece. Sem excecao nenhuma, o teste nao tem como
+-- mentir.
+--
+-- `reset role` porque a secao 8 terminou como `authenticated`, e quem inspeciona
+-- catalogo e derruba funcao aqui e o dono. Continua sem privilegio nenhum em
+-- jogo: `has_function_privilege` responde sobre o papel que a gente pergunta,
+-- nao sobre quem pergunta.
+reset role;
+drop function assert_eq(bigint, bigint, text);
+
+do $$
+declare achadas text;
+begin
+  -- (a) Nada em `public` e executavel por `anon`.
+  --     `public` e o schema que o PostgREST expoe: funcao executavel por
+  --     `anon` aqui e endpoint aberto na internet, com ou sem intencao.
+  select string_agg(
+           format('%s(%s)', p.proname, pg_get_function_identity_arguments(p.oid)),
+           ', ' order by p.proname)
+    into achadas
+    from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public'
+     and has_function_privilege('anon', p.oid, 'execute');
+
+  if achadas is not null then
+    raise exception 'VAZAMENTO: anon executa em public: %', achadas;
+  end if;
+
+  -- (b) Nada em `public` roda com SECURITY DEFINER.
+  --     Quem precisa de poder emprestado mora em `private`, onde o PostgREST
+  --     nao chega. Em `public`, a funcao roda como quem chama e a RLS da
+  --     tabela continua sendo a autoridade — que foi o conserto da 0011.
+  select string_agg(p.proname, ', ' order by p.proname)
+    into achadas
+    from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public'
+     and p.prosecdef;
+
+  if achadas is not null then
+    raise exception 'SECURITY DEFINER exposto pelo PostgREST: %', achadas;
+  end if;
+
+  -- (c) Toda funcao nossa tem search_path preso.
+  --     Solto, quem chama escolhe de qual schema vem cada nome usado la
+  --     dentro. Em funcao DEFINER isso e escalada de privilegio; nas outras e
+  --     so um bug esperando schema novo aparecer.
+  select string_agg(format('%s.%s', n.nspname, p.proname), ', ' order by p.proname)
+    into achadas
+    from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname in ('public', 'private')
+     and p.prokind = 'f'
+     and not exists (
+           select 1 from unnest(coalesce(p.proconfig, '{}')) c
+            where c ~ '^search_path='
+         );
+
+  if achadas is not null then
+    raise exception 'search_path solto em: %', achadas;
   end if;
 end $$;
 

@@ -24,7 +24,7 @@ constraint, ela não existe.
 | Constraints | invariantes | NOW = 1 (índice único parcial), NEXT ≤ 3 (check) |
 | `CRON_SECRET` | `/api/cron/keepalive` | bearer token; sem ele, **401** |
 
-## 3. Três armadilhas já pagas com bug real
+## 3. Quatro armadilhas já pagas com bug real
 
 Estão aqui porque são erros que **parecem** corretos no code review.
 
@@ -47,8 +47,48 @@ para um schema não exposto. **"Revoguei o acesso" só é verdade quando
 deferida só falhava no COMMIT; no meio da transação, dois NOW eram aceitos.
 Virou índice único parcial, imediato.
 
-Os três foram pegos por `supabase/tests/verify.sh` **antes de existir
-usuário**. Nenhum chegou a produção.
+**A quarta, e a pior: a lição escrita não impediu a repetição.** A migration
+0009 expôs `public.next_display_id` como `SECURITY DEFINER` e escreveu
+`revoke execute ... from public`, e eu li isso como "de fora ninguém executa".
+O `proacl` dizia `anon=X/postgres` — concessão **nominal**, que o Supabase
+adiciona por `alter default privileges`, e que revoke ao pseudo-papel PUBLIC
+não toca. Foi o linter que viu, não eu, dois parágrafos abaixo da frase acima
+neste mesmo arquivo.
+
+Por isso a 0011 não se limitou a revogar. Ela tirou o `SECURITY DEFINER` de
+cena — `knowledge_counters` já tem RLS com a mesma regra que o corpo checava à
+mão, e o DEFINER estava justamente desligando essa RLS para pôr uma linha de
+código no lugar de uma policy. E a seção 9 do `rls_test` passou a varrer o
+catálogo inteiro, com três invariantes que não dependem de ninguém lembrar:
+
+| # | invariante | por quê |
+|---|---|---|
+| a | nenhuma função de `public` é executável por `anon` | `public` é o schema que o PostgREST publica; ali, executável por `anon` = endpoint aberto |
+| b | nenhuma função de `public` é `SECURITY DEFINER` | poder emprestado mora em `private`, fora do alcance da API |
+| c | toda função de `public`/`private` tem `search_path` preso | solto, quem chama escolhe de onde vem cada nome |
+
+As três foram verificadas quebrando de propósito, uma a uma. A (a) ainda
+achou de brinde uma divergência entre o laboratório e a produção: o
+`_supabase_stub.sql` instalava `pgcrypto` em `public`, e a produção instala em
+`extensions` — 37 funções expostas no teste que nunca existiram no Supabase. O
+stub foi corrigido; um banco de teste que não é igual ao real é a única coisa
+que um verde não consegue avisar.
+
+**A regra que sai disso:** documentar uma armadilha não protege contra ela.
+Só teste que roda protege. Escrever a lição é o começo do trabalho, não o fim.
+
+**E um comando que não faz nada é pior que nenhum comando.** A primeira
+versão da 0011 trazia `alter default privileges in schema public revoke
+execute on functions from public, anon` para fechar o problema na origem.
+Medido em Postgres descartável, nas duas ordens possíveis: **não funciona** —
+o revoke ao PUBLIC não materializa nada em `pg_default_acl` e o default
+embutido volta a valer, então toda função nova nasce com `=X` no `proacl`. A
+linha saiu do arquivo. Proteção que só parece proteção é a matéria-prima do
+próximo bug desta lista.
+
+Os três primeiros foram pegos por `supabase/tests/verify.sh` **antes de
+existir usuário**. O quarto chegou a produção e ficou lá até o linter falar —
+o que é exatamente a diferença entre ter teste e ter documentação.
 
 ## 4. Segredos
 

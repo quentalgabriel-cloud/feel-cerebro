@@ -24,6 +24,19 @@ begin
 end $$;
 
 grant usage on schema public to anon, authenticated, service_role;
+
+-- Extensoes moram em `extensions`, nao em `public` — e assim que o Supabase
+-- entrega o banco. Sem esta linha, o `create extension if not exists pgcrypto`
+-- da 0001 cai em `public` AQUI e em `extensions` LA, e a suite passa a medir
+-- um banco que nao existe. Em producao, aquele comando ja e um no-op.
+--
+-- Quem descobriu a divergencia foi a secao 9 do rls_test: ela acusou 37
+-- funcoes do pgcrypto executaveis por `anon` em `public` — nenhuma delas
+-- real. Divergencia entre laboratorio e producao e a unica coisa que um
+-- teste verde nao consegue avisar sozinho.
+create schema if not exists extensions;
+grant usage on schema extensions to anon, authenticated, service_role;
+create extension if not exists pgcrypto with schema extensions;
 alter default privileges in schema public
   grant all on tables to anon, authenticated, service_role;
 alter default privileges in schema public
