@@ -77,6 +77,73 @@ grant usage on schema private to authenticated;
 
 ---
 
+## 2b. A lição escrita não impediu a repetição — e o que finalmente impediu
+
+**O que aconteceu (2026-09-09, uma semana depois do item 2).** A migration
+0009 criou `public.next_display_id` como `SECURITY DEFINER`, deliberadamente
+exposta pelo PostgREST, e fechou o acesso assim:
+
+```sql
+revoke execute on function public.next_display_id(uuid, text) from public;
+```
+
+Eu li essa linha como "de fora ninguém executa" e segui. O `proacl` dizia
+`{postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,...}` — havia
+uma concessão **nominal** a `anon`, que o Supabase adiciona com
+`alter default privileges in schema public grant execute on functions to anon`
+e que revoke ao pseudo-papel PUBLIC não toca. É o item 2 pelo avesso: lá o
+grant estava em PUBLIC e eu revoguei do role; aqui estava no role e eu
+revoguei do PUBLIC.
+
+Quem viu foi o linter do Supabase, não eu — e a regra violada estava escrita
+por mim, em `docs/SECURITY.md` §3, dois parágrafos acima de onde a repeti.
+
+**A correção de fundo não foi revogar.** `knowledge_counters` já tinha RLS
+com exatamente a mesma regra que o corpo da função checava à mão
+(`can_write_project`). O `SECURITY DEFINER` estava **desligando essa policy**
+para pôr uma linha de código no lugar dela. A 0011 passou a função a
+`SECURITY INVOKER` e apagou `private.next_display_id` — mantê-la seria o
+mesmo bypass um salto mais longe, onde o linter não olha.
+
+> Duas autoridades concordando é redundância. Uma autoridade tendo desligado
+> a outra é o furo.
+
+**O que de fato impede a repetição** é a seção 9 do `rls_test`: três
+invariantes que varrem `pg_proc` inteiro e derrubam a suíte se qualquer
+função de `public` ficar executável por `anon`, se qualquer função de
+`public` for `SECURITY DEFINER`, ou se qualquer função nossa ficar com
+`search_path` solto. As três foram quebradas de propósito, uma a uma, para
+provar que mordem.
+
+**A regra.** Documentar uma armadilha não protege contra ela; só teste que
+roda protege. Escrever a lição é o começo do trabalho, não o fim. Se você se
+pegar escrevendo "agora eu lembro de sempre fazer X", pare e transforme X em
+teste.
+
+**Corolário — comando que não faz nada é pior que comando nenhum.** A
+primeira versão da 0011 trazia, para fechar o problema na origem:
+
+```sql
+alter default privileges in schema public
+  revoke execute on functions from public, anon;
+```
+
+Medido num Postgres descartável, nas duas ordens possíveis, com e sem grant
+nominal antes: **não funciona**. O revoke ao PUBLIC não materializa nada em
+`pg_default_acl`, o default embutido do PostgreSQL (EXECUTE ao PUBLIC em toda
+função nova) volta a valer na criação, e `anon` herda por ser membro
+implícito de PUBLIC. A função nasce sempre com `=X` no `proacl`. A linha foi
+removida do arquivo, com o registro do porquê no lugar dela. Uma proteção que
+só parece proteção é a matéria-prima do próximo bug desta lista.
+
+**Corolário 2 — laboratório que não é igual à produção é a única coisa que um
+verde não avisa.** A primeira invariante acusou 37 funções do `pgcrypto`
+executáveis por `anon` em `public`. Nenhuma delas existia: o
+`_supabase_stub.sql` instalava a extensão em `public`, e o Supabase instala
+em `extensions`. O stub foi corrigido para começar como a produção começa.
+
+---
+
 ## 3. Constraint `DEFERRABLE INITIALLY DEFERRED` não protege durante a transação
 
 **O que aconteceu.** A regra "um único NOW por projeto" foi implementada
@@ -258,4 +325,10 @@ Vale mais que qualquer item individual desta lista, e está descrito em
 migrations aplicadas em ordem, e um teste de RLS com três personas que cobre
 **allow e deny** numa transação com `ROLLBACK`.
 
-Os itens 1, 2 e 3 foram pegos por ele. Nenhum chegou a existir em produção.
+Os itens 1, 2 e 3 foram pegos por ele, antes de existirem em produção.
+
+O item 2b **não foi** — chegou em produção e ficou lá até o linter falar,
+porque naquele momento o harness não varria o catálogo. É a diferença entre
+ter documentação e ter teste, medida no próprio projeto. A seção 9 existe
+para que esse caso não se repita: hoje a suíte falha sozinha, com o nome da
+função na mensagem, antes de qualquer coisa chegar ao banco real.

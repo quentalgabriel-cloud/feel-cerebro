@@ -94,6 +94,33 @@ Três riscos altos, todos já identificados:
 **Duas pré-condições duras que ainda não existem:** o repositório de
 conhecimento separado (D-04) e o token com escrita (D-05).
 
+> **Nota de 2026-09-09 — esta previsão foi executada; o texto acima fica
+> como registro do que se antecipou.** O que mudou de fato:
+>
+> - O código de `_fase03/` **não acordou**. Continua parado. A promoção foi
+>   reescrita do zero (`app/scripts/promote.mjs` + `memory/actions.ts`),
+>   porque o desenho mudou: intenção e efeito são separados, e o app web
+>   nunca escreve no Git.
+> - **Corrida de display id** — resolvida por `public.next_display_id`,
+>   sequência transacional por projeto e por tipo (migrations 0006/0009,
+>   e 0011 que a tirou de `SECURITY DEFINER`).
+> - **Índice que não reconstrói** — resolvido e *provado*:
+>   `scripts/reindex.mjs` destrói e reconstrói, e a impressão md5 bateu
+>   idêntica em duas reconstruções seguidas, nos dois repositórios.
+> - **Promoção parcial** — resolvida pela ordem no worker: arquivo → commit
+>   → push → e só então o banco. O pior estado possível virou fila parada.
+> - **Pré-condições** — os dois repositórios de conhecimento existem
+>   (`cerebro` e `ecossistema-feel`, privados). O token com escrita
+>   **deixou de ser necessário**: quem escreve no Git é o worker, rodando
+>   onde a credencial já existe, então nenhum token de escrita do GitHub
+>   precisa viver na Vercel.
+> - O vocabulário D-02 virou **seis classes** (decision · reasoning ·
+>   insight · open-loop · project-state · source) mais um eixo `epistemic`
+>   que absorve Hypothesis/Evidence sem criar classe nova — registrado na
+>   DEC-013. Este é um desvio da D-02 que **ainda não tem
+>   `ARCHITECTURE DEVIATION` escrito**; está na lista LATER de
+>   `01-ESTADO-REAL.md` §7.
+
 ### Fase 04 — Retrieval: medir cada degrau antes de subir
 
 Filtros estruturados → FTS do Postgres → chunks → embeddings → hybrid. A
