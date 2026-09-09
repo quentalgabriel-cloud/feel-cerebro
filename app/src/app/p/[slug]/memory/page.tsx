@@ -3,6 +3,8 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getProjectBySlug } from "@/lib/profile";
 import { DataError } from "@/components/data-error";
+import { PromoteForm } from "@/components/promote-form";
+import { promoverCandidate } from "./actions";
 import {
   KNOWLEDGE_LABEL,
   type Candidate,
@@ -63,15 +65,31 @@ export default async function MemoryPage({
     });
   }
 
-  const [{ data: conhecimento, error: erroConhecimento }, { data: capturas, error: erroCapturas }] =
-    await Promise.all([
-      consulta.order("display_id", { ascending: true }).limit(200),
-      supabase
-        .from("candidates")
-        .select("*, profiles(name)")
-        .eq("project_id", project.id)
-        .order("created_at", { ascending: false }),
-    ]);
+  const [
+    { data: conhecimento, error: erroConhecimento },
+    { data: capturas, error: erroCapturas },
+    { data: promocoes },
+  ] = await Promise.all([
+    consulta.order("display_id", { ascending: true }).limit(200),
+    supabase
+      .from("candidates")
+      .select("*, profiles(name)")
+      .eq("project_id", project.id)
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("promotions")
+      .select("candidate_id, display_id, status, erro")
+      .eq("project_id", project.id),
+  ]);
+
+  // Estado da promoção por captura. Uma captura pedida e ainda não aplicada
+  // NÃO é conhecimento — a tela diz isso, em vez de deixar parecer que já foi.
+  const pedido = new Map(
+    (promocoes ?? []).map((p) => [
+      p.candidate_id as string,
+      p as { display_id: string; status: string; erro: string | null },
+    ]),
+  );
 
   const itens = (conhecimento ?? []) as KnowledgeItem[];
   const candidatos = (capturas ?? []) as (Candidate & {
@@ -256,6 +274,47 @@ export default async function MemoryPage({
                   {c.profiles?.name ?? "—"} ·{" "}
                   {new Date(c.created_at).toLocaleString("pt-BR")}
                 </p>
+
+                {(() => {
+                  const p = pedido.get(c.id);
+
+                  if (p?.status === "aplicada") {
+                    return (
+                      <p className="mt-2 text-[11px] text-neutral-500">
+                        Promovido como{" "}
+                        <span className="font-mono">{p.display_id}</span> — está
+                        no Git.
+                      </p>
+                    );
+                  }
+
+                  if (p?.status === "pendente") {
+                    return (
+                      <p className="mt-2 rounded border border-blue-200 bg-blue-50 px-2 py-1.5 text-[11px] text-blue-900">
+                        Promoção pedida como{" "}
+                        <span className="font-mono">{p.display_id}</span>.
+                        Ainda <strong>não está no Git</strong> — entra quando o
+                        worker aplicar.
+                      </p>
+                    );
+                  }
+
+                  if (p?.status === "falhou") {
+                    return (
+                      <p className="mt-2 rounded border border-red-200 bg-red-50 px-2 py-1.5 text-[11px] text-red-800">
+                        A promoção falhou e nada foi escrito no Git.{" "}
+                        {p.erro?.slice(0, 140)}
+                      </p>
+                    );
+                  }
+
+                  return (
+                    <PromoteForm
+                      rascunho={c.raw_text}
+                      acao={promoverCandidate.bind(null, slug, c.id)}
+                    />
+                  );
+                })()}
               </li>
             ))}
           </ul>

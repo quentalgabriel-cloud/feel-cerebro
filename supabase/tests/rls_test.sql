@@ -365,6 +365,71 @@ begin
 end $$;
 
 -- ---------------------------------------------------------------------
+-- 7. A PORTA PÚBLICA DA SEQUÊNCIA (0009)
+--
+-- `public.next_display_id` é exposta pelo PostgREST de propósito — a promoção
+-- precisa dela. O que a torna segura é a checagem DENTRO da função, não o
+-- fato de estar escondida. Este é o teste dessa checagem.
+-- ---------------------------------------------------------------------
+
+-- Bruno, o forasteiro, chamando direto o RPC do projeto alheio.
+set local request.jwt.claims = '{"sub":"22222222-2222-2222-2222-222222222222","role":"authenticated"}';
+
+do $$
+declare conseguiu boolean := false;
+begin
+  begin
+    perform public.next_display_id('a0000000-0000-0000-0000-0000000000f1', 'decision');
+    conseguiu := true;
+  exception when others then
+    conseguiu := false;
+  end;
+
+  if conseguiu then
+    raise exception 'VAZAMENTO GRAVE: Bruno reservou display_id em projeto alheio';
+  end if;
+end $$;
+
+-- Carla é viewer: lê, mas não escreve — logo não reserva id.
+set local request.jwt.claims = '{"sub":"33333333-3333-3333-3333-333333333333","role":"authenticated"}';
+
+do $$
+declare conseguiu boolean := false;
+begin
+  begin
+    perform public.next_display_id('a0000000-0000-0000-0000-0000000000f1', 'decision');
+    conseguiu := true;
+  exception when others then
+    conseguiu := false;
+  end;
+
+  if conseguiu then
+    raise exception 'FALHA: viewer reservou display_id';
+  end if;
+end $$;
+
+-- Ana pode. E tipo inválido é recusado mesmo para quem pode escrever.
+set local request.jwt.claims = '{"sub":"11111111-1111-1111-1111-111111111111","role":"authenticated"}';
+
+do $$
+declare id text; conseguiu boolean := false;
+begin
+  id := public.next_display_id('a0000000-0000-0000-0000-0000000000f1', 'insight');
+  perform assert_eq((id like 'INS-%')::int, 1, 'Ana reserva id de insight');
+
+  begin
+    perform public.next_display_id('a0000000-0000-0000-0000-0000000000f1', 'inventado');
+    conseguiu := true;
+  exception when others then
+    conseguiu := false;
+  end;
+
+  if conseguiu then
+    raise exception 'FALHA: a funcao aceitou um tipo fora das seis classes';
+  end if;
+end $$;
+
+-- ---------------------------------------------------------------------
 
 select 'RLS TEST: PASS' as resultado;
 
